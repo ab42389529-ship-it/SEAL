@@ -1,1 +1,450 @@
+name: Generate and Build PRISM FLOW APK
 
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Generate All PRISM FLOW Source Files
+      run: |
+        python3 - << 'EOF'
+        import os
+
+        files = {
+            "settings.gradle.kts": """pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+                google()
+                mavenCentral()
+                maven { url = java.net.URI("https://jitpack.io") }
+            }
+        }
+        rootProject.name = "PRISM_FLOW"
+        include(":app")
+        """,
+            "build.gradle.kts": """plugins {
+            id("com.android.application") version "8.4.1" apply false
+            id("org.jetbrains.kotlin.android") version "1.9.23" apply false
+            id("com.google.devtools.ksp") version "1.9.23-1.0.20" apply false
+        }
+        """,
+            "gradle.properties": """org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+        android.useAndroidX=true
+        android.enableJetifier=false
+        android.nonTransitiveRClass=true
+        kotlin.code.style=official
+        """,
+            "app/build.gradle.kts": """plugins {
+            id("com.android.application")
+            id("org.jetbrains.kotlin.android")
+            id("com.google.devtools.ksp")
+        }
+
+        android {
+            namespace = "com.prismflow.downloader"
+            compileSdk = 34
+
+            defaultConfig {
+                applicationId = "com.prismflow.downloader"
+                minSdk = 24
+                targetSdk = 34
+                versionCode = 1
+                versionName = "1.0.0"
+
+                ndk {
+                    abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+                }
+            }
+
+            compileOptions {
+                sourceCompatibility = JavaVersion.VERSION_17
+                targetCompatibility = JavaVersion.VERSION_17
+            }
+            kotlinOptions {
+                jvmTarget = "17"
+            }
+            buildFeatures {
+                compose = true
+            }
+            composeOptions {
+                kotlinCompilerExtensionVersion = "1.5.11"
+            }
+        }
+
+        dependencies {
+            implementation("androidx.core:core-ktx:1.13.1")
+            implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.1")
+            implementation("androidx.activity:activity-compose:1.9.0")
+            implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.1")
+
+            val composeBom = platform("androidx.compose:compose-bom:2024.05.00")
+            implementation(composeBom)
+            implementation("androidx.compose.ui:ui")
+            implementation("androidx.compose.material3:material3")
+            implementation("androidx.compose.material:material-icons-extended")
+            implementation("androidx.navigation:navigation-compose:2.7.7")
+            implementation("io.coil-kt:coil-compose:2.6.0")
+
+            val roomVersion = "2.6.1"
+            implementation("androidx.room:room-runtime:$roomVersion")
+            implementation("androidx.room:room-ktx:$roomVersion")
+            ksp("androidx.room:room-compiler:$roomVersion")
+
+            val youtubedlVersion = "0.18.1"
+            implementation("io.github.junkfood02.youtubedl-android:library:$youtubedlVersion")
+            implementation("io.github.junkfood02.youtubedl-android:ffmpeg:$youtubedlVersion")
+
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+        }
+        """,
+            "app/src/main/AndroidManifest.xml": """<?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+            xmlns:tools="http://schemas.android.com/tools">
+
+            <uses-permission android:name="android.permission.INTERNET" />
+            <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+            <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+            <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" tools:ignore="ScopedStorage" />
+
+            <application
+                android:name=".PrismApp"
+                android:allowBackup="true"
+                android:icon="@android:drawable/ic_menu_save"
+                android:label="PRISM FLOW"
+                android:extractNativeLibs="true"
+                android:theme="@android:style/Theme.Material.NoActionBar"
+                tools:targetApi="34">
+
+                <activity
+                    android:name=".ui.MainActivity"
+                    android:exported="true"
+                    android:windowSoftInputMode="adjustResize">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                    <intent-filter>
+                        <action android:name="android.intent.action.SEND" />
+                        <category android:name="android.intent.category.DEFAULT" />
+                        <data android:mimeType="text/plain" />
+                    </intent-filter>
+                </activity>
+
+                <service
+                    android:name=".service.DownloadForegroundService"
+                    android:enabled="true"
+                    android:exported="false"
+                    android:foregroundServiceType="dataSync" />
+
+                <provider
+                    android:name="androidx.core.content.FileProvider"
+                    android:authorities="${applicationId}.provider"
+                    android:exported="false"
+                    android:grantUriPermissions="true">
+                    <meta-data
+                        android:name="android.support.FILE_PROVIDER_PATHS"
+                        android:resource="@xml/file_paths" />
+                </provider>
+            </application>
+        </manifest>
+        """,
+            "app/src/main/res/xml/file_paths.xml": """<?xml version="1.0" encoding="utf-8"?>
+        <paths>
+            <external-path name="external_downloads" path="Download/" />
+            <external-files-path name="app_downloads" path="Download/" />
+        </paths>
+        """,
+            "app/src/main/java/com/prismflow/downloader/PrismApp.kt": """package com.prismflow.downloader
+
+        import android.app.Application
+        import android.app.NotificationChannel
+        import android.app.NotificationManager
+        import android.os.Build
+        import com.yausername.youtubedl_android.YoutubeDL
+        import kotlinx.coroutines.CoroutineScope
+        import kotlinx.coroutines.Dispatchers
+        import kotlinx.coroutines.launch
+
+        class PrismApp : Application() {
+            companion object {
+                const val CHANNEL_ID = "prism_flow_downloads"
+                const val CHANNEL_NAME = "PRISM FLOW Media Downloads"
+            }
+
+            override fun onCreate() {
+                super.onCreate()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val channel = NotificationChannel(
+                        CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW
+                    )
+                    getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+                }
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        YoutubeDL.getInstance().init(applicationContext)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+        """,
+            "app/src/main/java/com/prismflow/downloader/data/DownloadItem.kt": """package com.prismflow.downloader.data
+
+        import androidx.room.Entity
+        import androidx.room.PrimaryKey
+
+        enum class DownloadStatus { QUEUED, DOWNLOADING, MERGING, COMPLETED, FAILED, CANCELLED }
+
+        @Entity(tableName = "downloads")
+        data class DownloadItem(
+            @PrimaryKey val id: String,
+            val url: String,
+            val title: String,
+            val formatId: String,
+            val resolution: String,
+            val ext: String,
+            val isAudioOnly: Boolean,
+            val thumbnail: String? = null,
+            val progress: Float = 0f,
+            val speed: String = "",
+            val eta: String = "",
+            val filePath: String? = null,
+            val status: DownloadStatus = DownloadStatus.QUEUED,
+            val errorMessage: String? = null,
+            val timestamp: Long = System.currentTimeMillis()
+        )
+        """,
+            "app/src/main/java/com/prismflow/downloader/data/DownloadDao.kt": """package com.prismflow.downloader.data
+
+        import androidx.room.*
+        import kotlinx.coroutines.flow.Flow
+
+        @Dao
+        interface DownloadDao {
+            @Query("SELECT * FROM downloads ORDER BY timestamp DESC")
+            fun getAllDownloads(): Flow<List<DownloadItem>>
+
+            @Query("SELECT * FROM downloads WHERE status = 'COMPLETED' ORDER BY timestamp DESC")
+            fun getCompletedMedia(): Flow<List<DownloadItem>>
+
+            @Query("SELECT * FROM downloads WHERE id = :id LIMIT 1")
+            suspend fun getDownloadById(id: String): DownloadItem?
+
+            @Insert(onConflict = OnConflictStrategy.REPLACE)
+            suspend fun insertOrUpdate(item: DownloadItem)
+
+            @Delete
+            suspend fun delete(item: DownloadItem)
+
+            @Query("DELETE FROM downloads")
+            suspend fun clearAll()
+        }
+        """,
+            "app/src/main/java/com/prismflow/downloader/data/AppDatabase.kt": """package com.prismflow.downloader.data
+
+        import android.content.Context
+        import androidx.room.Database
+        import androidx.room.Room
+        import androidx.room.RoomDatabase
+
+        @Database(entities = [DownloadItem::class], version = 1, exportSchema = false)
+        abstract class AppDatabase : RoomDatabase() {
+            abstract fun downloadDao(): DownloadDao
+
+            companion object {
+                @Volatile private var INSTANCE: AppDatabase? = null
+                fun getDatabase(context: Context): AppDatabase = INSTANCE ?: synchronized(this) {
+                    val inst = Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "prism.db").build()
+                    INSTANCE = inst
+                    inst
+                }
+            }
+        }
+        """,
+            "app/src/main/java/com/prismflow/downloader/data/ThemePreferences.kt": """package com.prismflow.downloader.data
+
+        import android.content.Context
+
+        enum class AppTheme { PRISM, OCEAN, SUNSET, MINT }
+
+        class ThemePreferences(context: Context) {
+            private val prefs = context.getSharedPreferences("prism_prefs", Context.MODE_PRIVATE)
+            fun getTheme(): AppTheme {
+                val name = prefs.getString("theme", AppTheme.PRISM.name) ?: AppTheme.PRISM.name
+                return try { AppTheme.valueOf(name) } catch (_: Exception) { AppTheme.PRISM }
+            }
+            fun setTheme(theme: AppTheme) = prefs.edit().putString("theme", theme.name).apply()
+        }
+        """,
+            "app/src/main/java/com/prismflow/downloader/data/ExtractorRepository.kt": """package com.prismflow.downloader.data
+
+        import android.content.Context
+        import com.yausername.youtubedl_android.YoutubeDL
+        import kotlinx.coroutines.Dispatchers
+        import kotlinx.coroutines.withContext
+
+        data class MediaFormatOption(val formatId: String, val resolution: String, val ext: String, val isAudioOnly: Boolean)
+        data class ExtractedMediaInfo(val url: String, val title: String, val duration: String, val thumbnail: String?, val formats: List<MediaFormatOption>)
+
+        class ExtractorRepository(private val context: Context) {
+            suspend fun analyzeUrl(url: String): Result<ExtractedMediaInfo> = withContext(Dispatchers.IO) {
+                try {
+                    val info = YoutubeDL.getInstance().getInfo(url)
+                    val options = mutableListOf<MediaFormatOption>()
+                    options.add(MediaFormatOption("bestvideo+bestaudio/best", "সর্বোচ্চ কোয়ালিটি (Auto Merge)", "mp4", false))
+                    info.formats?.forEach { fmt ->
+                        val isAudio = (fmt.vcodec == "none" || fmt.vcodec == null) && fmt.acodec != "none"
+                        val res = if (!isAudio) "${fmt.height}p" else "Audio (${fmt.acodec ?: "mp3"})"
+                        options.add(MediaFormatOption(fmt.formatId ?: "best", res, fmt.ext ?: "mp4", isAudio))
+                    }
+                    options.add(MediaFormatOption("bestaudio/best", "অডিও MP3 (High Quality)", "mp3", true))
+                    Result.success(ExtractedMediaInfo(url, info.title ?: "ভিডিও", "${info.duration}s", info.thumbnail, options))
+                } catch (e: Exception) {
+                    Result.failure(Exception(e.message ?: "বিশ্লেষণ ব্যর্থ হয়েছে"))
+                }
+            }
+        }
+        """,
+            "app/src/main/java/com/prismflow/downloader/service/DownloadForegroundService.kt": """package com.prismflow.downloader.service
+
+        import android.app.*
+        import android.content.Intent
+        import android.os.Environment
+        import android.os.IBinder
+        import androidx.core.app.NotificationCompat
+        import com.prismflow.downloader.PrismApp
+        import com.prismflow.downloader.data.*
+        import com.yausername.youtubedl_android.YoutubeDL
+        import com.yausername.youtubedl_android.YoutubeDLRequest
+        import kotlinx.coroutines.*
+        import java.io.File
+
+        class DownloadForegroundService : Service() {
+            private val job = SupervisorJob()
+            private val scope = CoroutineScope(Dispatchers.IO + job)
+
+            override fun onBind(intent: Intent?): IBinder? = null
+
+            override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                val id = intent?.getStringExtra("EXTRA_ID") ?: return START_NOT_STICKY
+                startForeground(1001, buildNotification("ডাউনলোড শুরু হচ্ছে...", 0))
+                scope.launch {
+                    val db = AppDatabase.getDatabase(applicationContext)
+                    val item = db.downloadDao().getDownloadById(id) ?: return@launch
+                    try {
+                        val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "PRISM_FLOW")
+                        if (!dir.exists()) dir.mkdirs()
+                        val req = YoutubeDLRequest(item.url)
+                        req.addOption("-o", "${dir.absolutePath}/%(title)s.%(ext)s")
+                        if (item.isAudioOnly) {
+                            req.addOption("-x")
+                            req.addOption("--audio-format", "mp3")
+                        } else {
+                            req.addOption("-f", item.formatId)
+                        }
+                        db.downloadDao().insertOrUpdate(item.copy(status = DownloadStatus.DOWNLOADING))
+                        YoutubeDL.getInstance().execute(req, id) { progress, eta, line ->
+                            scope.launch {
+                                db.downloadDao().insertOrUpdate(item.copy(progress = progress, eta = "${eta}s"))
+                            }
+                            updateNotification("ডাউনলোড হচ্ছে: ${progress.toInt()}%", progress.toInt())
+                        }
+                        db.downloadDao().insertOrUpdate(item.copy(status = DownloadStatus.COMPLETED, progress = 100f))
+                    } catch (e: Exception) {
+                        db.downloadDao().insertOrUpdate(item.copy(status = DownloadStatus.FAILED, errorMessage = e.message))
+                    } finally {
+                        stopForeground(STOP_FOREGROUND_DETACH)
+                    }
+                }
+                return START_NOT_STICKY
+            }
+
+            private fun buildNotification(text: String, progress: Int) =
+                NotificationCompat.Builder(this, PrismApp.CHANNEL_ID)
+                    .setContentTitle("PRISM FLOW ডাউনলোডার")
+                    .setContentText(text)
+                    .setSmallIcon(android.R.drawable.stat_sys_download)
+                    .setProgress(100, progress, progress == 0)
+                    .build()
+
+            private fun updateNotification(text: String, progress: Int) {
+                val m = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                m.notify(1001, buildNotification(text, progress))
+            }
+
+            override fun onDestroy() { job.cancel(); super.onDestroy() }
+        }
+        """,
+            "app/src/main/java/com/prismflow/downloader/ui/theme/Color.kt": """package com.prismflow.downloader.ui.theme
+        import androidx.compose.ui.graphics.Color
+        val DarkBg = Color(0xFF0F1117)
+        val DarkSurface = Color(0xFF181B24)
+        val PrismPurple = Color(0xFF8B5CF6)
+        val PrismCyan = Color(0xFF06B6D4)
+        """,
+            "app/src/main/java/com/prismflow/downloader/ui/theme/Theme.kt": """package com.prismflow.downloader.ui.theme
+
+        import androidx.compose.material3.*
+        import androidx.compose.runtime.Composable
+        import com.prismflow.downloader.data.AppTheme
+
+        @Composable
+        fun PrismFlowTheme(theme: AppTheme = AppTheme.PRISM, content: @Composable () -> Unit) {
+            val colorScheme = darkColorScheme(
+                primary = PrismPurple,
+                secondary = PrismCyan,
+                background = DarkBg,
+                surface = DarkSurface
+            )
+            MaterialTheme(colorScheme = colorScheme, content = content)
+        }
+        """,
+            "app/src/main/java/com/prismflow/downloader/ui/viewmodel/MainViewModel.kt": """package com.prismflow.downloader.ui.viewmodel
+
+        import android.app.Application
+        import android.content.Intent
+        import android.os.Build
+        import androidx.lifecycle.AndroidViewModel
+        import androidx.lifecycle.viewModelScope
+        import com.prismflow.downloader.data.*
+        import com.prismflow.downloader.service.DownloadForegroundService
+        import kotlinx.coroutines.flow.*
+        import kotlinx.coroutines.launch
+        import java.util.UUID
+
+        class MainViewModel(application: Application) : AndroidViewModel(application) {
+            private val db = AppDatabase.getDatabase(application)
+            private val repo = ExtractorRepository(application)
+            val themePrefs = ThemePreferences(application)
+
+            val downloads = db.downloadDao().getAllDownloads().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+            val library = db.downloadDao().getCompletedMedia().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+            var urlInput = MutableStateFlow("")
+            var isAnalyzing = MutableStateFlow(false)
+            var mediaResult = MutableSt
